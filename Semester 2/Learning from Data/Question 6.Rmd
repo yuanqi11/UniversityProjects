@@ -1,0 +1,469 @@
+---
+title: 'Project: Question 6'
+author: 'Gabriel Berardi'
+output: pdf_document
+---
+
+```{r chunk 1, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(ggthemes)
+library(knitr)
+library(car)
+
+data <- load('airbnb.RData')
+rm(amsterdam, copenhagen, dublin, iceland, london, paris, warsaw)
+
+bande <- rbind(barcelona, edinburgh)
+```
+
+# 1. Summarise the Data in the Price Column
+
+Let's take a closer look at the price column of the AirBnb listings in Barcelona and Edinburgh:
+
+```{r chunk 2, echo = FALSE}
+
+barc <- summary(barcelona$price)
+edin <- summary(edinburgh$price)
+# rint(rbind(barc, edin))
+
+kable(data.frame(City = c('Barcelona', 'Edinburgh'),
+           Minimum = c(10,10),
+           LQ = c(48,60),
+           Median = c(78,94),
+           Mean = c(110.2725,121.6147),
+           UQ = c(136,138),
+           Maximum = c(3606,2006)),
+      align = 'c',
+      caption = 'Price per Property')
+
+```
+
+As we can see, the data for the AirBnb prices have a very large range and since the Mean lies to the right of the Median, we can tell that the data seems to be right-skewed. Let's investigate this with a histogram:
+
+```{r chunk 3, echo = FALSE, warning = FALSE}
+
+barcp <- ggplot(data = barcelona) +
+  geom_histogram(aes(price),
+                     fill = '#f8766d', binwidth = 10) +
+  ggtitle('Price per Property in Barcelona') +
+  xlab('Price') +
+  ylab('Count') +
+  xlim(c(0,3000)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- ggplot(data = edinburgh) +
+  geom_histogram(aes(price),
+                     fill = '#5dbcd2', binwidth = 10) +
+  ggtitle('Price per Property in Edinburgh') +
+  xlab('Price') +
+  ylab('Count') +
+  xlim(c(0,3000)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 1)
+```
+
+\newpage
+
+We can see that there are some very extreme values both in Barcelona and Edinburgh. As has been outlined before, these might be properties whose price data were captured for full months. Let's remove data that lie above the 99%-quantile and re-plot the histogram:
+
+```{r chunk 4, echo = FALSE, warning = FALSE, fig.height = 3}
+
+barcp <- barcelona %>%
+  filter(price < quantile(barcelona$price, 0.99)) %>% 
+  ggplot() +
+  geom_histogram(aes(price),
+                     fill = '#f8766d', binwidth = 8) +
+  ggtitle('Price per Property in Barcelona, excl. Extreme Values') +
+  xlab('Price') +
+  ylab('Count') +
+  xlim(c(0,500)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- edinburgh %>% 
+  filter(price < quantile(edinburgh$price, 0.99)) %>% 
+  ggplot() +
+  geom_histogram(aes(price),
+                     fill = '#5dbcd2', binwidth = 8) +
+  ggtitle('Price per Property in Edinburgh, excl. Extreme Values') +
+  xlab('Price') +
+  ylab('Count') +
+  xlim(c(0,500)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 1)
+```
+
+After we have removed the extreme values, we can see that the distribution for the price per property is quite similar in Barcelona and Edinburgh, but this can be investigated better using a boxplot:
+
+```{r chunk 5, echo = FALSE, warning = FALSE, fig.height = 3}
+
+boxp <- bande %>% 
+  filter(price < quantile(bande$price, 0.99)) %>% 
+  ggplot() +
+  geom_boxplot(aes(x = city,
+                   y = price,
+                   fill = city),
+               outlier.shape = NA) +
+  ggtitle('Price per Property, excl. Extreme Values') +
+  xlab('') +
+  ylab('Price') +
+  ylim(c(0,300)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+boxp
+```
+
+Now we can see more clearly that the AirBnb prices in Edinburgh (Median: 94) appear to be higher than in Barcelona (Median: 78), when we ignore prices that lie above the 99%-quantile.
+
+Let's now move on to investigate this a bit further with a one-sample confidence interval for the population mean price.
+
+\newpage
+
+# 2. One-sample Confidence Interval for the Population Mean Price
+
+First of all, let's think about the assumptions for one-sample confidence intervals and one-sample t-tests. The two main assumptions are:
+
+1.  our data x1 . . . , xn have arisen from a normal distribution;
+2.  our data points x1 , . . . , xn are independent of one another.
+
+As we have noticed before, the data for price are highly right-skewed. However, since our sample for Barcelona and Edinburgh are both very large, we can still produce reasonable one-sample confidence intervals and perform useful one-sample t-tests. This is because we have a large sample for both cities and the central limit theorem tells us that the distribution of the prices, in repeated sampling, converges to a normal distribution, irrespective of the original distribution. **Nevertheless, the central limit theorem is still an approximation and therefore we will later also use a transformation on the price data to make it more normally distributed and use this to compare the results with and without transformation!**
+
+With respect to the second assumption, we might need to consider whether the price of an AirBnb listing could be influenced by other listings, for example because homeowners compare and adjust their own listing's price to those nearby. However, for the remainder of this project, we will treat the data as though individual listings are not related to one another.
+
+Let's first produce a one-sample confidence interval including all price data we have. I will do this for a confidence level of 95%, 99% and 99.9% and gather the results in a table.
+
+```{r chunk 6, echo = FALSE}
+
+print(t.test(barcelona$price, conf.level = 0.95))
+print(t.test(barcelona$price, conf.level = 0.99))
+print(t.test(barcelona$price, conf.level = 0.999))
+print(t.test(edinburgh$price, conf.level = 0.95))
+print(t.test(edinburgh$price, conf.level = 0.99))
+print(t.test(edinburgh$price, conf.level = 0.999))
+
+kable(data.frame('City' = c('Barcelona', 'Edinburgh'),
+           '0.95' = c('(108.58, 111.96)','(119.37 123.86)'),
+           '0.99' = c('(108.05, 112.49)','(118.67, 124.56)'),
+           '0.999' = c('(107.43, 113.11)','(117.85, 125.38)')),
+      align = 'c',
+      caption = 'Confidence Intervals for Population Mean Price')
+
+```
+
+\newpage
+
+As we can see in Table 2, each of the 95 %, 99 % and the 99.9 % confidence interval for the population mean price show a clear gap between Barcelona and Edinburgh, with Edinburgh having higher prices than Barcelona.
+
+Now, we will attempt to account for the fact that some of the data for the AirBnb listings were recorded for monthly prices. As above, we will remove the listings whose price is higher than the 99% quantile, redo the one-sample tests and once again gather the data in a table. Here, I will omit the individual outputs and only show the final table:
+
+```{r chunk 7, echo = FALSE}
+
+# barcelona %>% 
+#   filter(price < quantile(barcelona$price, 0.99)) %>% 
+#   select(price) %>% 
+#   t.test(conf.level = 0.95)
+# 
+# barcelona %>% 
+#   filter(price < quantile(barcelona$price, 0.99)) %>% 
+#   select(price) %>% 
+#   t.test(conf.level = 0.99)
+# 
+# barcelona %>% 
+#   filter(price < quantile(barcelona$price, 0.99)) %>% 
+#   select(price) %>% 
+#   t.test(conf.level = 0.999)
+# 
+# edinburgh %>% 
+#   filter(price < quantile(edinburgh$price, 0.99)) %>% 
+#   select(price) %>% 
+#   t.test(conf.level = 0.95)
+# 
+# edinburgh %>% 
+#   filter(price < quantile(edinburgh$price, 0.99)) %>% 
+#   select(price) %>% 
+#   t.test(conf.level = 0.99)
+# 
+# edinburgh %>% 
+#   filter(price < quantile(edinburgh$price, 0.99)) %>% 
+#   select(price) %>% 
+#   t.test(conf.level = 0.999)
+
+kable(data.frame('City' = c('Barcelona', 'Edinburgh'),
+           '0.95' = c('(101.61, 103.89)','(112.17, 115.33)'),
+           '0.99' = c('(101.25, 104.25)','(111.68, 115.83)'),
+           '0.999' = c('(100.84, 104.67)','(111.10, 116.40)')),
+      align = 'c',
+      caption = 'Confidence Intervals for Population Mean Price, excl. Extreme Values')
+```
+
+After removing the extreme values for price, the distinction between Barcelona and Edinburgh is equally clear. To conclude this, let's plot these confidence intervals:
+
+```{r chunk 8, echo = FALSE}
+
+colors <- c('Barcelona' = '#f8766d', 'Edinburgh' = '#5dbcd2')
+
+# All Values
+
+plot_inclev <- ggplot() +
+  
+geom_point(aes(x = c(108.58, 111.96),
+               y = c(0.95,0.95),
+               colour = 'Barcelona')) +
+geom_line(aes(x = c(108.58, 111.96),
+              y = c(0.95,0.95),
+              colour = 'Barcelona')) +
+
+geom_point(aes(x = c(119.37, 123.86),
+               y = c(0.95,0.95),
+               colour = 'Edinburgh')) +
+geom_line(aes(x = c(119.37, 123.86),
+              y = c(0.95, 0.95),
+              colour = 'Edinburgh')) +
+
+geom_point(aes(x = c(108.05, 112.49),
+               y = c(0.99,0.99),
+               colour = 'Barcelona')) +
+geom_line(aes(x = c(108.05, 112.49),
+              y = c(0.99,0.99),
+              colour = 'Barcelona')) +
+
+geom_point(aes(x = c(118.67, 124.56),
+               y = c(0.99,0.99),
+               colour = 'Edinburgh')) +
+geom_line(aes(x = c(118.67, 124.56),
+              y = c(0.99, 0.99),
+              colour = 'Edinburgh')) +
+
+geom_point(aes(x = c(107.43, 113.11),
+               y = c(0.999,0.999),
+               colour = 'Barcelona')) +
+geom_line(aes(x = c(107.43, 113.11),
+              y = c(0.999,0.999),
+              colour = 'Barcelona')) +
+
+geom_point(aes(x = c(117.85, 125.38),
+               y = c(0.999,0.999),
+               colour = 'Edinburgh')) +
+geom_line(aes(x = c(117.85, 125.38),
+              y = c(0.999, 0.999),
+              colour = 'Edinburgh')) +
+  
+ggtitle('Confidence Intervals for Population Mean Price') +
+xlab('Population Mean Price') +
+ylab('Confidence Level') +
+ylim(c(0.95,1)) +
+xlim(c(100,126)) +
+theme_bw() +
+theme(plot.title = element_text(size = 10, face = 'bold'),
+    axis.title = element_text(size = 8, face = 'bold'),
+    legend.position = 'bottom',
+    legend.title = element_blank())
+
+# Excluding Extreme Values
+
+plot_exclev <- ggplot() +
+  
+geom_point(aes(x = c(101.61, 103.89),
+               y = c(0.95,0.95),
+               colour = 'Barcelona')) +
+geom_line(aes(x = c(101.61, 103.89),
+              y = c(0.95,0.95),
+              colour = 'Barcelona')) +
+
+geom_point(aes(x = c(112.17, 115.33),
+               y = c(0.95,0.95),
+               colour = 'Edinburgh')) +
+geom_line(aes(x = c(112.17, 115.33),
+              y = c(0.95, 0.95),
+              colour = 'Edinburgh')) +
+
+geom_point(aes(x = c(101.25, 104.25),
+         y = c(0.99,0.99),
+         colour = 'Barcelona')) +
+geom_line(aes(x = c(101.25, 104.25),
+              y = c(0.99,0.99),
+              colour = 'Barcelona')) +
+
+geom_point(aes(x = c(111.68, 115.83),
+               y = c(0.99,0.99),
+               colour = 'Edinburgh')) +
+geom_line(aes(x = c(111.68, 115.83),
+              y = c(0.99, 0.99),
+              colour = 'Edinburgh')) +
+
+geom_point(aes(x = c(100.84, 104.67),
+               y = c(0.999,0.999),
+               colour = 'Barcelona')) +
+geom_line(aes(x = c(100.84, 104.67),
+              y = c(0.999,0.999),
+              colour = 'Barcelona')) +
+
+geom_point(aes(x = c(111.10, 116.40),
+               y = c(0.999,0.999),
+               colour = 'Edinburgh')) +
+geom_line(aes(x = c(111.10, 116.40),
+              y = c(0.999, 0.999),
+              colour = 'Edinburgh')) +
+  
+ggtitle('Confidence Intervals for Population Mean Price, excl. Extreme Values') +
+xlab('Population Mean Price') +
+ylab('Confidence Level') +
+ylim(c(0.95,1)) +
+xlim(c(100,126)) +
+theme_bw() +
+theme(plot.title = element_text(size = 10, face = 'bold'),
+    axis.title = element_text(size = 8, face = 'bold'),
+    legend.position = 'bottom',
+    legend.title = element_blank())
+
+grid.arrange(plot_inclev, plot_exclev, ncol = 1)
+
+```
+
+From these two plots above we can conclude two things:
+
+1.  The population mean price seems to be lower in Barcelona across all confidence levels and both including and excluding extreme values.
+2.  When excluding extreme values, the confidence intervals for Barcelona and Edinburgh become narrower across all confidence levels.
+
+As mentioned above, we will now apply a log-transformation on our price data and repeat the one-sample t-test.
+
+Let's look at a histogram of the price data after log-transformation:
+
+```{r chunk 9, echo = FALSE, warning = FALSE, fig.height = 6}
+
+barcp <- ggplot(data = barcelona) +
+  geom_histogram(aes(log(price)),
+                     fill = '#f8766d',
+                 bins = 30) +
+  ggtitle('Log of Price per Property in Barcelona') +
+  xlim(c(2,8)) +
+  xlab('Log(Price)') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- ggplot(data = edinburgh) +
+  geom_histogram(aes(log(price)),
+                     fill = '#5dbcd2',
+                 bins = 30) +
+  ggtitle('Log of Price per Property in Edinburgh') +
+  xlim(c(2,8)) +
+  xlab('Log(Price)') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 1)
+```
+
+As we can see, using a log-transformation on our data makes it much more normally distributed. Now, let's reproduce the one-sample t-test with a 95 % confidence level:
+
+\newpage
+
+```{r chunk 10, echo = FALSE, warning = FALSE}
+
+print(t.test(log(barcelona$price), conf.level = 0.95))
+print(t.test(log(edinburgh$price), conf.level = 0.95))
+
+kable(data.frame('City' = c('Barcelona', 'Edinburgh'),
+           '0.95' = c('(4.39, 4.41)','(4.55, 4.58)')),
+      align = 'c',
+      caption = 'Confidence Intervals for Population Mean Log(Price)')
+```
+
+Again, from Table 4 we can see that there is a clear distinction between the logarithm of the mean price in Barcelona and Edinburgh, as the two intervals do not overlap.
+
+We can undo the log-transformation and obtain:
+
+```{r chunk 11, echo = FALSE, warning = FALSE}
+
+# print(exp(4.39))
+# print(exp(4.41))
+# print(exp(4.55))
+# print(exp(4.58))
+
+kable(data.frame('City' = c('Barcelona', 'Edinburgh'),
+           '0.95' = c('(80.64, 82.27)','(94.63, 97.51)')),
+      align = 'c',
+      caption = 'Confidence Intervals for Population Geometric Price')
+```
+
+Note that Table 5 now displays the 95 % confidence interval for the **geometric mean** of the prices in Barcelona and Edinburgh, which does make sense here, since the geometric mean is not overly influenced by the very large values in a skewed distribution.
+
+This means, that we would also conclude that the geometric mean price for AirBnbs is higher in Edinburgh than in Barcelona.
+
+\newpage
+
+# 3. Two-sample t-test for the Population Mean Prices
+
+Now we will investigate the hypothesis that the population mean prices are different for Barcelona and Edinburgh. We now make the additional assumption that the distribution of the mean price has the same variance in Barcelona and Edinburgh. We can investigate this assumption with Levene's test for homogeneity of variance. In this case, our null hypothesis is that the population variance of price data is the same for AirBnb listings in Barcelona and Edinburgh:
+
+```{r chunk 12, echo = FALSE, warning = FALSE}
+
+leveneTest(bande$price, bande$city)
+```
+
+Since the p-value for Levene's test is well above 0.05, we would not reject the null hypothesis and conclude that we can assume that the population variances for price to be equal in Barcelona and Edinburgh.
+
+We then have:
+
+$H_0: \mu_B = \mu_E$
+
+$H_1: \mu_B \ne \mu_E$
+
+$where \hspace{0.2cm} \mu \hspace{0.2cm} is \hspace{0.2cm} the \hspace{0.2cm} population \hspace{0.2cm} mean \hspace{0.2cm} price \hspace{0.2cm} for \hspace{0.2cm} Barcelona \hspace{0.2cm} and \hspace{0.2cm} Edinburgh.$
+
+Unlike before, we will now only work with a confidence level of 95%.
+
+```{r chunk 13, echo = FALSE}
+ t.test(bande$price ~ bande$city, var.equal = TRUE)
+```
+
+As we can see, the p-value is very small and well below 5 %, so there is clear evidence that we should reject our null hypothesis, i.e. that there is a statistically significant difference in the population mean price for AirBnb listings in Barcelona and Edinburgh at a significance level of 5 % (indeed, looking at the p-value, also at a much lower significance level). If we look at the confidence interval of (-14.21, -8.47), we can also say that the population mean price seems to be lower in Barcelona than in Edinburgh and the difference is likely to lie between 8.47 and 14.21.
+
+\newpage
+
+Similarly as before, let's remove the extreme price values that lie above the 99 % quantile and repeat this two-sample test. 
+
+```{r chunk 14, echo = FALSE}
+
+bande_corrected <- bande %>% 
+  filter(price < quantile(bande$price, 0.99))
+
+ t.test(bande_corrected$price ~ bande_corrected$city, var.equal = TRUE)
+```
+
+After removing the extreme values for price, we can see that the null hypothesis should still be rejected at a significance level of 5 %. In fact, the p-value is even lower than before. The confidence interval is narrower and the difference in population mean prices between Barcelona and Edinburgh is now estimated to lie somewhere between 8.03 and 11.98, with Barcelona having lower mean prices than Edinburgh.
+
+Last but not least, let's again apply a log-transformation on the data and reproduce the two-sample t-test:
+
+```{r chunk 15, echo = FALSE}
+ t.test(log(bande$price) ~ bande$city, var.equal = TRUE)
+```
+
+As we can see, we still reject the null hypothesis and estimate that the difference in population mean log(prices) between Barcelona and Edinburgh lies somewhere between 0.14 and 0.18 with Barcelona having lower mean log(prices) than Edinburgh.

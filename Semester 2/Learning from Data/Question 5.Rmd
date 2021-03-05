@@ -1,0 +1,341 @@
+---
+title: 'Project: Question 5'
+author: 'Gabriel Berardi'
+output: pdf_document
+---
+
+```{r chunk 1, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(ggthemes)
+library(knitr)
+
+data <- load('airbnb.RData')
+rm(amsterdam, copenhagen, dublin, iceland, london, paris, warsaw)
+
+bande <- rbind(barcelona, edinburgh)
+```
+
+# 1. Exploratory Analysis
+
+## (a) Number of Reviews for each Property
+
+Let's begin this short exploratory analysis by looking at a five-number summary of the number of reviews for each property in Barcelona and Edinburgh:
+
+```{r chunk 2, echo=FALSE}
+
+barc <- summary(barcelona$reviews)
+edin <- summary(edinburgh$reviews)
+# print(rbind(barc, edin))
+
+kable(data.frame(City = c('Barcelona', 'Edinburgh'),
+           Minimum = c(0,0),
+           LQ = c(1,1),
+           Median = c(8,7),
+           Mean = c(24.7125, 23.6505),
+           UQ = c(31, 27),
+           Maximum = c(457, 506)),
+      align = 'c',
+      caption = 'Reviews per Property')
+```
+
+As we can see from the large distance between the Median and the Mean, the data seems to be highly skewed. Since the Median lies to the left of the Mean, this data seems to be skewed to the right.
+
+Let's look at a histogram for the number of reviews Barcelona and Edinburgh received for each property to visualize this more clearly:
+
+```{r chunk 3, echo = FALSE, fig.height = 4}
+
+barcp <- ggplot(data = barcelona) +
+  geom_histogram(aes(reviews),
+                     fill = '#f8766d', binwidth = 5) +
+  ggtitle('No. Reviews per Property in Barcelona') +
+  xlab('Reviews') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- ggplot(data = edinburgh) +
+  geom_histogram(aes(reviews),
+                     fill = '#5dbcd2', binwidth = 5) +
+  ggtitle('No. Reviews per Property in Edinburgh') +
+  xlab('Reviews') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 1)
+```
+
+\newpage
+
+From these two histograms, we now clearly see the skewness to the right for the number of reviews per property in both cities. There seem to be quite a few very high number of reviews, which are barely visible in a histogram. We can see these outliers more clearly by plotting a boxplot:
+
+```{r chunk 4, echo = FALSE, fig.height = 3}
+
+ggplot(data = bande) +
+  geom_boxplot(aes(x = city,
+                   y = reviews,
+                   fill = city)) +
+  ggtitle('No. Reviews per Property') +
+  xlab('') +
+  ylab('Reviews') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+```
+
+Apart from this, the distribution of the number of reviews per property seems to be quite similar for both cities, but it is hard to see on this plot. Let's remove the outliers and look at the boxplot once more:
+
+```{r chunk 5, echo = FALSE, fig.height = 3}
+
+boxp <- ggplot(data = bande) +
+  geom_boxplot(aes(x = city,
+                   y = reviews,
+                   fill = city),
+               outlier.shape = NA) +
+  ggtitle('No. Reviews per Property') +
+  xlab('') +
+  ylab('Reviews') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+ylimit = boxplot.stats(bande$reviews)$stats[c(1, 5)]
+boxp = boxp + coord_cartesian(ylim = ylimit*1.05)
+
+boxp
+```
+
+Now we can see that the number of reviews per property is distributed quite similarly in Barcelona and Edinburgh.
+
+\newpage
+
+## (b) The Room Type in each Property
+
+Next, let's examine the type of rooms that are offered in each property in Barcelona and Edinburgh.
+
+```{r chunk 6, echo = FALSE}
+
+barcp <- barcelona %>% 
+  ggplot() +
+  geom_bar(aes(x = room_type), fill = '#f8766d') +
+  ggtitle('Type of Rooms in Barcelona') +
+  xlab('') +
+  ylab('No.') +
+  ylim(c(0,10000)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- edinburgh %>% 
+  ggplot() +
+  geom_bar(aes(x = room_type), fill = '#5dbcd2') +
+  ggtitle('Type of Rooms in Edinburgh') +
+  xlab('') +
+  ylab('No.') +
+  ylim(c(0,10000)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 2)
+```
+
+As we can see, there are in total many more offered rooms in Barcelona (n = 18.838) than in Edinburgh (n = 9.402), which makes sense since Barcelona has a population of over 1,600,000, while Edinburgh only has around 520,000 inhabitants. In terms of the distribution, we see that Barcelona has more private rooms than entire apartments, while Edinburgh has more entire apartments than private rooms. Both Barcelona and Edinburgh only have very few shared rooms:
+
+```{r chunk7, echo = FALSE}
+
+kable(table(bande$room_type, bande$city),
+      align = 'c',
+      caption = 'Room Types in Barcelona and Edinburgh')
+```
+
+\newpage
+
+Let's examine these room types a bit more and look at the Median price as well as the Median number of people that can be accommodated for each of the different room types in Barcelona and Edinburgh:
+
+```{r chunk 8, echo = FALSE}
+
+kable(bande %>% 
+  group_by(city, room_type) %>% 
+  summarise('Median Price' = round(median(price), 2),
+            'Median Capacity' = round(median(accommodates), 2),
+            .groups = 'drop') %>% 
+  rename('City' = city,
+         'Room Type' = room_type),
+  align = 'c',
+  caption = 'Median Price and Capacity per Room Type') 
+
+p1 <- bande %>% 
+  group_by(room_type, city) %>% 
+  summarise('med_price' = round(median(price), 2),
+            'med_cap' = round(median(accommodates), 2),
+            .groups = 'drop') %>% 
+  ggplot() +
+  geom_bar(aes(x = room_type, 
+               y = med_price,
+               fill = city),
+           stat = 'identity',
+           position=position_dodge()) +
+  ggtitle('Median Price per Room Type') +
+  xlab('') +
+  ylab('Median Price') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none',
+        legend.title = element_blank())
+
+p2 <- bande %>% 
+  group_by(room_type, city) %>% 
+  summarise('med_price' = round(median(price), 2),
+            'med_cap' = round(median(accommodates), 2),
+            .groups = 'drop') %>% 
+  ggplot() +
+  geom_bar(aes(x = room_type, 
+               y = med_cap,
+               fill = city),
+           stat = 'identity',
+           position = position_dodge()) +
+  ggtitle('Median Capacity per Room Type') +
+  xlab('') +
+  ylab('Median Capacity') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'bottom',
+        legend.title = element_blank())
+
+grid.arrange(p1, p2, ncol = 1)
+
+```
+
+From Table 3 and the first barplot above we can see that the median price for different room types differ. As we would have expected, entire apartments are the most expensive, and private rooms are more expensive than shared rooms. The median prices are quite similar in Barcelona and Edinburgh.
+
+**However: As outlined in the PDF "Assessed_Project_Data_Description", there may be some values for price that were recorded per month, rather than per night, possibly resulting in a distortion of the data. This will be further investigated in Question 6.**
+
+The second barplot visualizes the median capacity per room type. Unsurprisingly, the median capacity for entire apartments is the highest, while the median number of people that can accommodated in private and shared rooms is the same. Again, the median capacity is the same in Barcelona and Edinburgh.
+
+\newpage
+
+## (c) Overall Satisfaction
+
+To conclude this short exploratory data analysis, let's take a look at the overall satisfaction in Barcelona and Edinburgh:
+
+```{r chunk 9, echo = FALSE, fig.height = 6}
+
+barcp <- ggplot(data = barcelona) +
+  geom_bar(aes(overall_satisfaction),
+                     fill = '#f8766d') +
+  ggtitle('Overall Satisfaction per Property in Barcelona') +
+  xlab('Reviews') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- ggplot(data = edinburgh) +
+  geom_bar(aes(overall_satisfaction),
+                     fill = '#5dbcd2') +
+  ggtitle('Overall Satisfaction per Property in Edinburgh') +
+  xlab('Reviews') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 1)
+```
+
+As we can see from the two barplots above, the reviews in both Barcelona and Glasgow seem to be quite extreme, with most ratings being either very bad (0.0) or really good (4.5 or 5.0).
+
+However, we need to consider that listings with an overall satisfaction of 0.0 probably have very few, or even no reviews at all. Moreover, if a listing only has one review, the overall satisfaction does not carry a lot of information. Let's therefore filter all listings that have less than two reviews and reproduce the barplots above once more:
+
+```{r chunk 10, echo = FALSE, fig.height = 6}
+
+barcp <- barcelona %>% 
+  filter(reviews > 1) %>% 
+  ggplot() +
+  geom_bar(aes(overall_satisfaction),
+                     fill = '#f8766d') +
+  ggtitle('Overall Satisfaction per Property in Barcelona, excl. Properties with < 2 Reviews') +
+  xlab('Reviews') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+edinp <- edinburgh %>% 
+  filter(reviews > 1) %>% 
+  ggplot() +
+  geom_bar(aes(overall_satisfaction),
+                     fill = '#5dbcd2') +
+  ggtitle('Overall Satisfaction per Property in Edinburgh, excl. Properties with < 2 Reviews') +
+  xlab('Reviews') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title=element_text(size = 8, face = 'bold'),
+        legend.position = 'none')
+
+grid.arrange(barcp, edinp, ncol = 1)
+```
+
+As we have anticipated, when looking at properties with at least two reviews, a lot fewer listings have an overall satisfaction of 0.0. By excluding properties without any review, it furthermore looks like Edinburgh might have a slightly higher overall satisfaction. Let's have a closer look:
+
+```{r chunk 11, echo = FALSE}
+
+# barcelona %>% 
+#   filter(reviews != 0) %>% 
+#   select(overall_satisfaction) %>% 
+#   summary() %>% 
+#   print()
+# 
+# edinburgh %>% 
+#   filter(reviews != 0) %>% 
+#   select(overall_satisfaction) %>% 
+#   summary() %>% 
+#   print()
+
+kable(data.frame(City = c('Barcelona', 'Edinburgh'),
+           Minimum = c(0,0),
+           LQ = c(4,4.5),
+           Median = c(4.5,5.0),
+           Mean = c(3.792, 3.972),
+           UQ = c(5.00, 5.00),
+           Maximum = c(5.00, 5.00)),
+      align = 'c',
+      caption = 'Overall Satisfaction, excl. Properties without Reviews')
+```
+
+Table 4 shows that the overall satisfaction for AirBnb listings seems to be better in Edinburgh, compared to Barcelona, since both the Mean and the Median are higher.
+
+\newpage
+
+# 2. Comments
+
+Summarizing the exploratory analysis, we can conclude the following points about the AirBnb listings for Barcelona and Edinburgh:
+
+-   There are more data for Barcelona (18.838 listings) than for Edinburgh (9.402 listings).
+
+-   The number of reviews per property is highly right-skewed and the distribution is quite similar for both cities. There are no missing values in this column.
+
+-   There are three room types in both cities: whole apartments, private rooms and shared rooms. Barcelona has more private rooms than entire apartments, while Edinburgh has more entire apartments than private rooms. Both Barcelona and Edinburgh only have very few shared rooms. There are no missing values in this column. Furthermore, we have seen that both the price and capacity for each room type is quite similar in both cities.
+
+-   Regarding the overall satisfaction, we have seen that most reviews were either very low (0.0) or very high (4.5 or 5.0), with only very few reviews between that. There are no missing values in this column, but many properties had no reviews at all, resulting in many misleading values of 0.0, which we have excluded above. The overall satisfaction for AirBnb listings seems to be slightly higher in Edinburgh, compared to Barcelona.

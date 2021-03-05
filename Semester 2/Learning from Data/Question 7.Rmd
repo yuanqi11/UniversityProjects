@@ -1,0 +1,66 @@
+---
+title: 'Project: Question 7'
+author: 'Gabriel Berardi'
+output: pdf_document
+---
+
+```{r chunk 1, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(ggthemes)
+library(knitr)
+
+data <- load('airbnb.RData')
+rm(amsterdam, copenhagen, dublin, iceland, london, paris, warsaw)
+
+bande <- rbind(barcelona, edinburgh)
+```
+
+# 1. Two-proportion Test to Compare the Proportion of Properties with Room Type *"Private room"*
+
+Lastly, we are going to conduct a two-proportion test to formally compare the proportion of properties with room type of *Private room* between Barcelona and Edinburgh.
+
+First of all, we should calculate how many of the listings in Barcelona and Edinburgh are "private rooms" and "non private rooms":
+
+```{r chunk 2, echo = FALSE}
+
+bande_table <- bande %>% 
+  mutate(room_type = factor(ifelse(room_type == 'Private room',
+                                   'Private room',
+                                   'Non Private room')))
+
+
+bande_table <- table(bande_table$city, bande_table$room_type)
+bande_table
+```
+
+Let's visualize this:
+
+```{r chunk 3, echo = FALSE, fig.height = 4}
+
+ggplot(as.data.frame(bande_table), aes(x=Var1, y = Freq, fill=Var2)) + 
+    geom_bar(stat='identity') +
+  ggtitle('Proportin of Room Type in Barcelona and Edinburgh') +
+  xlab('') +
+  ylab('Count') +
+  theme_bw() +
+  theme(plot.title = element_text(size = 10, face = 'bold'),
+        axis.title = element_text(size = 8, face = 'bold'),
+        legend.position = 'bottom',
+        legend.title = element_blank())
+```
+
+\newpage
+
+Then, we can conduct the two-proportion test:
+
+```{r chunk 4, echo = FALSE}
+
+prop.test(bande_table)
+```
+
+This provides a 95 % confidence interval for the difference between the proportion of the private rooms in Barcelona and Edinburgh. Since the p-value is well below 5 % and the confidence interval does not include 0 then there is sufficient evidence of a difference in the proportion of private rooms in Barcelona and Edinburgh. This difference is likely to lie between 0.12 and 0.09, with Barcelona having a higher proportion of private rooms compared to Edinburgh.
